@@ -1,0 +1,137 @@
+import numpy as np
+import os
+import pandas as pd
+import pyodbc
+import win32com.client as win32
+
+acctperiod = '0618'
+periodlist = ['0118','0218','0318','0418','0518','0618','0718','0818','0918','1018','1118','1218']
+pebedt ="{ts '2018-01-01 00:00:00'}"
+mtdpebedt = "{ts '2018-06-01 00:00:00'}"
+
+Sortfn = r'M:\2018\Administration\General Information\Sort Values.xls'
+
+year = '20' + str(acctperiod[2:])
+#takes acctperiod string's first two characters
+month = str(acctperiod[0:2])
+#dictionary similar to list, but can access values by looking up a key
+monthdict = {'01':'January', '02':'February', '03':'March', '04':'April', 
+            '05':'May', '06':'June', '07':'July', '08':'August', '09':'September', 
+            '10':'October', '11':'November', '12':'December'}
+monthname = monthdict[month]
+
+pdlist = "('"+ "','".join(periodlist) + "')"
+#print pdlist
+
+#Database Connections
+Elitecnxn = pyodbc.connect('DSN=Elite;Trusted_Connection=yes')
+Eliterptcnxn = pyodbc.connect('DRIVER={SQL Server};SERVER=RDCEliterpt01;DATABASE=Son_DB_RPT;UID=mbmori;Trusted_Connection=Yes')
+Elitetstcnxn = pyodbc.connect('DRIVER={SQL Server};SERVER=RDCEliterpt01;DATABASE=Son_DB_RPT;UID=mbmori;Trusted_Connection=Yes')
+
+excel = win32.gencache.EnsureDispatch('Excel.Application')
+excel.Visible = True
+
+#Change decoding for Excel
+#def changeencode(data):
+#    cols = data.columns
+#    for col in cols:
+#        if data[col].dtype == 'O':
+#            data[col] = data[col].str.decode('cp1252')#.str.encode('utf-8')
+#    return data
+
+PICscript = """
+SELECT mw_pic.tkinit, mw_pic.tkdept, mw_pic.tksect, mw_pic.tkloc, 
+mw_pic.dept_desc, mw_pic.sect_desc, mw_pic.hire_date, 
+mw_pic.term_date, mw_pic.tktitle, mw_pic.office, mw_pic.timekeep_name, 
+mw_pic.mtd_billhrs, mw_pic.annual_hrs, mw_pic.cya_new, mw_pic.ytd_val, 
+mw_pic.mtd_nbhrs, mw_pic.ytd_nbhrs, mw_pic.ytd_hrwkdb, mw_pic.ytd_stdbil, 
+mw_pic.ytd_origbil, mw_pic.ytd_bldfee, mw_pic.ytd_colfee, 
+(mw_picnew.cresp_bills + mw_picnew.msup_bills + mw_picnew.mbil_bills + mw_picnew.corg_bills + mw_picnew.morg_bills) AS [CMI Fees Billed],
+(mw_picnew.cresp_coll + mw_picnew.msup_coll + mw_picnew.mbil_coll + mw_picnew.corg_coll + mw_picnew.morg_coll) AS [CMI Fees Collected],
+mw_pic.cresp_bills, mw_pic.cresp_coll, mw_pic.cresp_wip, mw_pic.cresp_ar, 
+mw_pic.cresp_origbil, mw_pic.cresp_stdbil, mw_pic.msup_bills, 
+mw_pic.msup_coll, mw_pic.msup_wip, mw_pic.msup_ar, mw_pic.msup_origbil, 
+mw_pic.msup_stdbil, mw_pic.mbil_bills, mw_pic.mbil_coll, mw_pic.mbil_wip, 
+mw_pic.mbil_ar, mw_pic.mbil_origbil, mw_pic.mbil_stdbil, 
+mw_pic.corg_bills, mw_pic.corg_coll, mw_pic.corg_origbil, 
+mw_pic.corg_stdbil, mw_pic.morg_bills, mw_pic.morg_coll, 
+mw_pic.morg_origbil, mw_pic.morg_stdbil
+FROM Son_DB.dbo.mw_pic mw_pic, Son_DB.dbo.mw_picnew mw_picnew
+WHERE (mw_pic.acct_per={acct_per}) AND (mw_pic.cur_typ='BASE') AND 
+(mw_pic.tkinit=mw_picnew.tkinit) AND (mw_picnew.acct_per={acct_per}) AND 
+(mw_picnew.cur_typ='BASE')
+ORDER BY mw_pic.tkinit
+""".format(
+    acct_per = acctperiod)
+
+dfPIC = pd.read_sql_query(PICscript, Elitecnxn)
+#dfPIC = changeencode(dfPIC)
+
+PICcols = ['TK#', 'tkinit', 'tkdept', 'tksect', 'tkloc', 'dept_desc', 'sect_desc', 'hire_date', 
+           'term_date', 'tktitle', 'office', 'timekeep_name', 'Active/Termed', 'mtd_billhrs', 'annual_hrs', 
+           'cya_new', 'ytd_val', 'mtd_nbhrs', 'ytd_nbhrs', 'ytd_hrwkdb', 'ytd_stdbil', 'ytd_origbil', 
+           'ytd_bldfee', 'ytd_colfee', 'Effective Rate', 'CMI Fees Billed', 'CMI Fees Collected', 'cresp_bills', 
+           'cresp_coll', 'cresp_wip', 'cresp_ar', 'cresp_origbil', 'cresp_stdbil', 'msup_bills', 
+           'msup_coll', 'msup_wip', 'msup_ar', 'msup_origbil', 'msup_stdbil', 'mbil_bills', 
+           'mbil_coll', 'mbil_wip', 'mbil_ar', 'mbil_origbil', 'mbil_stdbil', 'corg_bills', 
+           'corg_coll', 'corg_origbil', 'corg_stdbil', 'morg_bills', 'morg_coll', 'morg_origbil', 
+           'morg_stdbil', 'Values Present']
+dfPIC = dfPIC.loc[:, PICcols]
+dfPIC.loc[:, 'mtd_billhrs':'morg_stdbil'] = dfPIC.loc[:, 'mtd_billhrs':'morg_stdbil'].fillna(0)
+#dfPIC.loc[:, 'term_date'] = dfPIC.loc[:, 'term_date'].fillna(0)
+
+print (dfPIC.head(10))
+#print dfPIC.dtypes
+
+EliteChkscript = """
+SELECT inqtimewahs.icode, 
+inqtimewahs.ivalue, 
+Sum(inqtimewahs.thhrwkdw) [Worked Hours], 
+Sum(inqtimewahs.thdowkdw/currates.cdrate) [Worked Amount], 
+Sum(inqtimewahs.thdocodc/currates.cdrate) [Fees Received], 
+Sum(inqtimewahs.thhrwkdb) [Hours Worked by Date Billed], 
+Sum(inqtimewahs.thdowkdb/currates.cdrate) [Amount Billed Original], 
+Sum(inqtimewahs.thdobidb/currates.cdrate) [Amount Billed Actual], 
+Sum(inqtimewahs.thhrnbdw) [NonBillable Hours], 
+Sum(inqtimewahs.thstbidb/currates.cdrate) [Standard Dollars Billed]
+FROM Son_DB.dbo.currates currates, 
+Son_DB.dbo.inqtimewahs inqtimewahs, 
+Son_DB.dbo.periodt periodt
+WHERE (inqtimewahs.icode='TL') AND (inqtimewahs.mcurrency=currates.curcode) 
+AND (inqtimewahs.iper=periodt.pe And inqtimewahs.iper In {pdlist}) 
+AND (currates.trtype='A') AND (periodt.pebedt>={pebedt} 
+And periodt.pebedt Between currates.cddate1 And currates.cddate2)
+GROUP BY inqtimewahs.icode, inqtimewahs.ivalue
+ORDER BY inqtimewahs.ivalue
+""".format(
+    pdlist = pdlist,
+    pebedt = pebedt)
+
+dfEliteChk = pd.read_sql_query(EliteChkscript, Elitecnxn)
+#dfEliteChk = changeencode(dfEliteChk)
+
+#print dfEliteChk
+
+EliteChkscriptmtd = """
+SELECT inqtimewahs.icode, 
+inqtimewahs.ivalue, 
+Sum(inqtimewahs.thhrwkdw) [Worked Hours], 
+Sum(inqtimewahs.thhrnbdw) [NonBillable Hours]
+FROM Son_DB.dbo.currates currates, 
+Son_DB.dbo.inqtimewahs inqtimewahs, 
+Son_DB.dbo.periodt periodt
+WHERE (inqtimewahs.icode='TL') AND (inqtimewahs.mcurrency=currates.curcode) 
+AND (inqtimewahs.iper=periodt.pe And inqtimewahs.iper = {acctperiod}) 
+AND (currates.trtype='A') AND (periodt.pebedt>={mtdpebedt} 
+And periodt.pebedt Between currates.cddate1 And currates.cddate2)
+GROUP BY inqtimewahs.icode, inqtimewahs.ivalue
+ORDER BY inqtimewahs.ivalue
+""".format(
+    acctperiod = acctperiod,
+    mtdpebedt = mtdpebedt)
+
+dfEliteChkmtd = pd.read_sql_query(EliteChkscriptmtd, Elitecnxn)
+#dfEliteChkmtd = changeencode(dfEliteChkmtd)
+
+#print (dfEliteChkmtd)
+print ('Done.')
