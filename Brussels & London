@@ -1,0 +1,335 @@
+import numpy as np
+import os
+import pandas as pd
+import pyodbc
+import win32com.client as win32
+
+acctperiod = '0618'
+periodlist = ['0118','0218','0318','0418','0518','0618','0718','0818','0918','1018','1118','1218']
+pebedt ="{ts '2018-01-01 00:00:00'}"
+mtdpebedt = "{ts '2018-06-01 00:00:00'}"
+
+year = '20' + str(acctperiod[2:])
+month = str(acctperiod[0:2])
+monthdict = {'01':'January', '02':'February', '03':'March', '04':'April', 
+            '05':'May', '06':'June', '07':'July', '08':'August', '09':'September', 
+            '10':'October', '11':'November', '12':'December'}
+monthname = monthdict[month]
+
+pdlist = "('"+ "','".join(periodlist) + "')"
+#print pdlist
+
+#Database Connections
+Elitecnxn = pyodbc.connect('DSN=Elite;Trusted_Connection=yes')
+Eliterptcnxn = pyodbc.connect('DRIVER={SQL Server};SERVER=RDCEliterpt01;DATABASE=Son_DB_RPT;UID=mbmori;Trusted_Connection=Yes')
+
+#Change decoding for Excel
+#def changeencode(data):
+#    cols = data.columns
+#    for col in cols:
+#        if data[col].dtype == 'O':
+#            data[col] = data[col].str.decode('cp1252')#.str.encode('utf-8')
+#    return data
+
+PICscript = """
+SELECT mw_pic.tkinit, mw_pic.tkdept, mw_pic.tksect, mw_pic.tkloc, 
+mw_pic.dept_desc, mw_pic.sect_desc, mw_pic.hire_date, 
+mw_pic.term_date, mw_pic.tktitle, mw_pic.office, mw_pic.timekeep_name, 
+mw_pic.mtd_billhrs, mw_pic.annual_hrs, mw_pic.cya_new, mw_pic.ytd_val, 
+mw_pic.mtd_nbhrs, mw_pic.ytd_nbhrs, mw_pic.ytd_hrwkdb, mw_pic.ytd_stdbil, 
+mw_pic.ytd_origbil, mw_pic.ytd_bldfee, mw_pic.ytd_colfee, 
+(mw_picnew.cresp_bills + mw_picnew.msup_bills + mw_picnew.mbil_bills + mw_picnew.corg_bills + mw_picnew.morg_bills) AS [CMI Fees Billed],
+(mw_picnew.cresp_coll + mw_picnew.msup_coll + mw_picnew.mbil_coll + mw_picnew.corg_coll + mw_picnew.morg_coll) AS [CMI Fees Collected],
+mw_pic.cresp_bills, mw_pic.cresp_coll, mw_pic.cresp_wip, mw_pic.cresp_ar, 
+mw_pic.cresp_origbil, mw_pic.cresp_stdbil, mw_pic.msup_bills, 
+mw_pic.msup_coll, mw_pic.msup_wip, mw_pic.msup_ar, mw_pic.msup_origbil, 
+mw_pic.msup_stdbil, mw_pic.mbil_bills, mw_pic.mbil_coll, mw_pic.mbil_wip, 
+mw_pic.mbil_ar, mw_pic.mbil_origbil, mw_pic.mbil_stdbil, 
+mw_pic.corg_bills, mw_pic.corg_coll, mw_pic.corg_origbil, 
+mw_pic.corg_stdbil, mw_pic.morg_bills, mw_pic.morg_coll, 
+mw_pic.morg_origbil, mw_pic.morg_stdbil
+FROM Son_DB.dbo.mw_pic mw_pic, Son_DB.dbo.mw_picnew mw_picnew
+WHERE (mw_pic.acct_per={acct_per}) AND (mw_pic.cur_typ='LOCL') 
+AND mw_pic.tkloc IN ('2108','5132')
+AND (mw_pic.tkinit=mw_picnew.tkinit) AND (mw_picnew.acct_per={acct_per}) 
+AND (mw_picnew.cur_typ='LOCL')
+ORDER BY mw_pic.tkinit
+""".format(
+    acct_per = acctperiod)
+
+dfPIC = pd.read_sql_query(PICscript, Elitecnxn)
+#dfPIC = changeencode(dfPIC)
+
+PICcols = ['TK#', 'tkinit', 'tkdept', 'tksect', 'tkloc', 'dept_desc', 'sect_desc', 'hire_date', 
+           'term_date', 'tktitle', 'office', 'timekeep_name', 'Active/Termed', 'mtd_billhrs', 'annual_hrs', 
+           'cya_new', 'ytd_val', 'mtd_nbhrs', 'ytd_nbhrs', 'ytd_hrwkdb', 'ytd_stdbil', 'ytd_origbil', 
+           'ytd_bldfee', 'ytd_colfee', 'Effective Rate', 'CMI Fees Billed', 'CMI Fees Collected', 'cresp_bills', 
+           'cresp_coll', 'cresp_wip', 'cresp_ar', 'cresp_origbil', 'cresp_stdbil', 'msup_bills', 
+           'msup_coll', 'msup_wip', 'msup_ar', 'msup_origbil', 'msup_stdbil', 'mbil_bills', 
+           'mbil_coll', 'mbil_wip', 'mbil_ar', 'mbil_origbil', 'mbil_stdbil', 'corg_bills', 
+           'corg_coll', 'corg_origbil', 'corg_stdbil', 'morg_bills', 'morg_coll', 'morg_origbil', 
+           'morg_stdbil', 'Values Present']
+dfPIC = dfPIC.loc[:, PICcols]
+dfPIC.loc[:, 'mtd_billhrs':'morg_stdbil'] = dfPIC.loc[:, 'mtd_billhrs':'morg_stdbil'].fillna(0)
+#dfPIC.loc[:, 'term_date'] = dfPIC.loc[:, 'term_date'].fillna(0)
+
+#print dfPIC.head(10)
+#print dfPIC.dtypes
+
+EliteChkscript = """
+SELECT inqtimewahs.icode, 
+inqtimewahs.ivalue, 
+Sum(inqtimewahs.thhrwkdw) [Worked Hours], 
+Sum(inqtimewahs.thdowkdw/currates.cdrate) [Worked Amount], 
+Sum(inqtimewahs.thdocodc/currates.cdrate) [Fees Received], 
+Sum(inqtimewahs.thhrwkdb) [Hours Worked by Date Billed], 
+Sum(inqtimewahs.thdowkdb/currates.cdrate) [Amount Billed Original], 
+Sum(inqtimewahs.thdobidb/currates.cdrate) [Amount Billed Actual], 
+Sum(inqtimewahs.thhrnbdw) [NonBillable Hours], 
+Sum(inqtimewahs.thstbidb/currates.cdrate) [Standard Dollars Billed]
+FROM Son_DB_RPT.dbo.currates currates, Son_DB_RPT.dbo.inqtimewahs inqtimewahs, Son_DB_RPT.dbo.periodt periodt
+WHERE (inqtimewahs.icode='TL') AND (inqtimewahs.mcurrency=currates.curcode) 
+AND (inqtimewahs.iper=periodt.pe And inqtimewahs.iper In {pdlist}) 
+AND (currates.trtype='A') AND (periodt.pebedt>={pebedt} 
+And periodt.pebedt Between currates.cddate1 And currates.cddate2)
+GROUP BY inqtimewahs.icode, inqtimewahs.ivalue
+ORDER BY inqtimewahs.ivalue
+""".format(
+    pdlist = pdlist,
+    pebedt = pebedt)
+
+#dfEliteChk = pd.read_sql_query(EliteChkscript, Eliterptcnxn)
+#dfEliteChk = changeencode(dfEliteChk)
+
+#print dfEliteChk
+
+EliteChkscriptmtd = """
+SELECT inqtimewahs.icode, 
+inqtimewahs.ivalue, 
+Sum(inqtimewahs.thhrwkdw) [Worked Hours], 
+Sum(inqtimewahs.thhrnbdw) [NonBillable Hours]
+FROM Son_DB_RPT.dbo.currates currates, Son_DB_RPT.dbo.inqtimewahs inqtimewahs, Son_DB_RPT.dbo.periodt periodt
+WHERE (inqtimewahs.icode='TL') AND (inqtimewahs.mcurrency=currates.curcode) 
+AND (inqtimewahs.iper=periodt.pe And inqtimewahs.iper = {acctperiod}) 
+AND (currates.trtype='A') AND (periodt.pebedt>={mtdpebedt} 
+And periodt.pebedt Between currates.cddate1 And currates.cddate2)
+GROUP BY inqtimewahs.icode, inqtimewahs.ivalue
+ORDER BY inqtimewahs.ivalue
+""".format(
+    acctperiod = acctperiod,
+    mtdpebedt = mtdpebedt)
+
+#dfEliteChkmtd = pd.read_sql_query(EliteChkscriptmtd, Eliterptcnxn)
+#dfEliteChkmtd = changeencode(dfEliteChkmtd)
+
+#print dfEliteChkmtd
+print ('Done.')
+
+#########################################################
+
+#Populate TK# column
+dfPIC.loc[:, 'TK#'] = dfPIC.loc[:, 'tkinit']
+dfPIC.loc[:, 'TK#'] = dfPIC.loc[:, 'TK#'].map(lambda x: x.lstrip('0'))
+dfPIC.loc[:, 'TK#'] = dfPIC.loc[:, 'TK#'].replace(to_replace='', value=0)
+
+#Populate Sort column
+Sortfn = r'M:\2018\Administration\New Hires\Sort Values.xls'
+
+Sortxl = pd.ExcelFile(Sortfn)
+dfSort = Sortxl.parse(sheetname='Financial Reporting', index_col=None, parse_cols=[0,1])
+dfSort.columns = ['tktitle', 'Sort']
+#print dfSort
+
+dfPIC = dfPIC.merge(dfSort, on='tktitle', how='left')
+
+#Populate Active/Termed column
+dfPIC['Active/Termed'] = np.where(dfPIC['term_date'].isnull(), 'Active', 'Termed')
+
+
+#Populate Effective Rate column
+dfPIC['Effective Rate'] = dfPIC['ytd_bldfee']/dfPIC['ytd_hrwkdb']
+dfPIC['Effective Rate'] = dfPIC['Effective Rate'].fillna(0)
+dfPIC['Effective Rate'] = dfPIC['Effective Rate'].replace(to_replace=['inf','-inf'], value=0)
+
+#Populate Values Present column
+dfPIC['Values Present'] = dfPIC.loc[:, 'mtd_billhrs':'morg_stdbil'].sum(axis=1)
+
+PICcols = ['TK#', 'tkinit', 'tkdept', 'tksect', 'tkloc', 'dept_desc', 'sect_desc', 'hire_date', 
+           'term_date', 'Sort', 'tktitle', 'office', 'timekeep_name', 'Active/Termed', 'mtd_billhrs', 'annual_hrs', 
+           'cya_new', 'ytd_val', 'mtd_nbhrs', 'ytd_nbhrs', 'ytd_hrwkdb', 'ytd_stdbil', 'ytd_origbil', 
+           'ytd_bldfee', 'ytd_colfee', 'Effective Rate', 'CMI Fees Billed', 'CMI Fees Collected', 'cresp_bills', 
+           'cresp_coll', 'cresp_wip', 'cresp_ar', 'cresp_origbil', 'cresp_stdbil', 'msup_bills', 
+           'msup_coll', 'msup_wip', 'msup_ar', 'msup_origbil', 'msup_stdbil', 'mbil_bills', 
+           'mbil_coll', 'mbil_wip', 'mbil_ar', 'mbil_origbil', 'mbil_stdbil', 'corg_bills', 
+           'corg_coll', 'corg_origbil', 'corg_stdbil', 'morg_bills', 'morg_coll', 'morg_origbil', 
+           'morg_stdbil', 'Values Present']
+dfPIC = dfPIC.loc[:, PICcols]
+
+#print dfPIC.tail(20)
+#print dfPIC.columns.values.tolist()
+
+#twriter = pd.ExcelWriter(r'C:\Users\jcevans\Documents\PIC\testsort.xlsx')
+#dfPIC.to_excel(twriter, index=False, engine='xlsxwriter')
+#twriter.save()
+print ('Done.')
+
+#######################################################
+
+#Create PIC
+dfPICfilt = dfPIC[(dfPIC.loc[:, 'Values Present']!=0)]
+dfPICfilt.loc[:, 'TK#'] = dfPICfilt.loc[:, 'TK#'].astype(int)
+
+
+#dfPICsort = dfPICfilt.sort_values(by=['office', 'Active/Termed', 'Sort', 'timekeep_name'])
+dfPICsort = dfPICfilt.loc[dfPICfilt['timekeep_name'].str.lower().sort_values().index]
+dfPICsort = dfPICsort.sort_values(by=['office', 'Active/Termed', 'Sort'])
+del dfPICsort['Values Present']
+#print dfPICsort
+
+for off in dfPICsort.office.unique():
+    print (off)
+    
+    if 'Brussels' in off:
+        currency = '(EUR)'
+    if 'London' in off:
+        currency = '(GBP)'
+    
+    dfPICsortoff = dfPICsort[(dfPICsort.loc[:, 'office']==off)]
+    #del dfPICsort['Values Present']
+    #print dfPICsortoff.head(2)
+
+    #Add Total Row to PIC
+    titletot = 'Grand Total'
+    columnlist = ['O','P','Q','R','S','T','U','V',
+                  'W','X','Y','AA','AB','AC','AD',
+                  'AE','AF','AG','AH','AI','AJ','AK',
+                  'AL','AM','AN','AO','AP','AQ','AR',
+                  'AS','AT','AU','AV','AW','AX','AY',
+                  'AZ','BA','BB']
+
+    d = {}
+    for col in columnlist:
+        f = '=SUBTOTAL(9,' + str(col) + '4:' + str(col) + str(dfPICsortoff.shape[0]+3) + ')'
+        d[str(col)] = f
+
+    effrate = '=IFERROR(X' + str(dfPICsortoff.shape[0]+4) + '/U' + str(dfPICsortoff.shape[0]+4) + ',0)'
+    #print effrate
+
+    dfPICsortoff = dfPICsortoff.append({'office':titletot, 'mtd_billhrs':d['O'], 'annual_hrs':d['P'], 
+               'cya_new':d['Q'], 'ytd_val':d['R'], 'mtd_nbhrs':d['S'], 'ytd_nbhrs':d['T'], 'ytd_hrwkdb':d['U'], 
+                'ytd_stdbil':d['V'], 'ytd_origbil':d['W'], 
+               'ytd_bldfee':d['X'], 'ytd_colfee':d['Y'], 'Effective Rate':effrate, 'CMI Fees Billed':d['AA'], 
+                'CMI Fees Collected':d['AB'], 'cresp_bills':d['AC'], 'cresp_coll':d['AD'], 'cresp_wip':d['AE'], 
+                'cresp_ar':d['AF'], 'cresp_origbil':d['AG'], 'cresp_stdbil':d['AH'], 'msup_bills':d['AI'], 
+               'msup_coll':d['AJ'], 'msup_wip':d['AK'], 'msup_ar':d['AL'], 'msup_origbil':d['AM'], 
+                'msup_stdbil':d['AN'], 'mbil_bills':d['AO'], 
+               'mbil_coll':d['AP'], 'mbil_wip':d['AQ'], 'mbil_ar':d['AR'], 'mbil_origbil':d['AS'], 
+                'mbil_stdbil':d['AT'], 'corg_bills':d['AU'], 
+               'corg_coll':d['AV'], 'corg_origbil':d['AW'], 'corg_stdbil':d['AX'], 'morg_bills':d['AY'], 
+                'morg_coll':d['AZ'], 'morg_origbil':d['BA'], 
+               'morg_stdbil':d['BB']}, ignore_index=True)
+    offwriter = pd.ExcelWriter(os.path.join(r'C:\Users\mbmori\Documents\PIC', 
+                                            acctperiod + ' PIC ' + off + currency + '.xlsx'))
+    dfPICsortoff.to_excel(offwriter, sheet_name=(acctperiod + ' ' + off[:31]), index=False, 
+                                                 startrow=2, startcol=0, na_rep='', engine='xlsxwriter')
+
+    #Format with xlsxwriter
+    workbook = offwriter.book
+    worksheet = offwriter.sheets[(acctperiod + ' ' + off[:31])]
+    #pyws = workbook.add_worksheet(pytabnm)
+
+    #Format columns
+    money_fmt = workbook.add_format({'num_format': '#,##0'})
+    tk_fmt = workbook.add_format({'num_format': '0'})
+
+    worksheet.set_column('A:A', None, tk_fmt)
+    #worksheet.set_column('F:F', 39.14)
+    #worksheet.set_column('K:K', 14.29)
+    #worksheet.set_column('L:L', 27.29)
+    #worksheet.set_column('M:M', 30.00)
+    #worksheet.set_column('N:N', 12.43)
+    worksheet.set_column('O:O', 12, money_fmt)
+    worksheet.set_column('Z:Z', 12, money_fmt)
+    worksheet.set_column('P:Y', 14.14, money_fmt)
+    worksheet.set_column('AA:BB', 14.14, money_fmt)
+
+    for row in range(0,dfPICsortoff.shape[0]+4):
+        worksheet.set_row(row,12)
+
+    #Add filter to Excel
+    fltr = 'A3:BB' + str(dfPICsortoff.shape[0]+3)
+    worksheet.autofilter(fltr)
+
+    worksheet.freeze_panes(3,14)
+    worksheet.set_zoom(85)
+
+    worksheet.set_landscape()
+    worksheet.set_paper(5)
+    worksheet.set_margins(left=0.5, right=0.5, top=0.65, bottom=0.5)
+    worksheet.repeat_rows(0,2)
+    worksheet.repeat_columns('A:N')
+    worksheet.print_area('A1:BB' + str(dfPICsortoff.shape[0]+4))
+    worksheet.set_v_pagebreaks([32])
+    worksheet.set_print_scale(48)
+
+    #Create Header and Footer
+    fn = acctperiod + ' PIC' + off + currency + '.xlsx'
+    Head = monthname + ' ' + year + ' PIC Report\n ' + off + currency
+    worksheet.set_header(header=Head)
+    Foot = r'&LM:/' + year + '/Checklist/' + acctperiod + '/01) General Schedules/PIC Reports/' + fn
+    worksheet.set_footer(footer=Foot)
+
+    offwriter.save()
+
+    #Format PIC with win32
+    excel = win32.gencache.EnsureDispatch('Excel.Application')
+    #excel.Visible = True
+
+    templwb = excel.Workbooks.Open(r'C:/Users/mbmori/Documents/PIC/Save/PICTemplate.xlsx')
+    PICwb = excel.Workbooks.Open(r'C:\Users\mbmori\Documents\PIC\\' + acctperiod + ' PIC ' + off + currency + '.xlsx')
+
+    templws = templwb.Worksheets('Sheet1')
+    PICws = PICwb.Worksheets(acctperiod + ' ' + off[:31])
+
+    #Copy formatting from template
+    templws.Range('A5:BB5').Copy()
+
+    rng = 'A4:BB' + str(dfPICsortoff.shape[0]+3)
+    PICws.Range(rng).PasteSpecial(Paste=-4122)
+
+    templws.Range('A1:BB3').Copy()
+    PICws.Range('A1:BB3').PasteSpecial(Paste=-4104)
+
+    templws.Range('A7:BB7').Copy()
+    totrng = 'A' + str(dfPICsortoff.shape[0]+3) + ':BB' + str(dfPICsortoff.shape[0]+3)
+    PICws.Range(totrng).PasteSpecial(Paste=-4122)
+
+    #Set column auto width for hidden columns
+    PICws.Columns('A:N').AutoFit()
+
+    #Hide columns
+    PICws.Columns('A:E').Hidden=True
+    PICws.Columns('G:J').Hidden=True
+    PICws.Columns('U:W').Hidden=True
+    PICws.Columns('AG:AH').Hidden=True
+    PICws.Columns('AM:AN').Hidden=True
+    PICws.Columns('AS:AT').Hidden=True
+    PICws.Columns('AW:AX').Hidden=True
+    PICws.Columns('BA:BB').Hidden=True
+
+    PICws.Select()
+    PICws.Range('O4').Select()
+
+    #r'C:\Users\jcevans\Documents\PIC' + '\\' + fn
+    #r'C:\Users\jcevans\Documents\PIC\0616 PIC All Office filterable Test.xlsx'
+    #fpath = r'C:/Users/jcevans/Documents/PIC/' + acctperiod + r' PIC All Office (filterable) Test.xlsx'
+    #print 'C:\Users\jcevans\Documents\PIC\\' + acctperiod + r' PIC All Office (filterable) Test.xlsx'
+    PICwb.SaveAs(os.path.join(r'C:\Users\mbmori\Documents\PIC', 
+                              acctperiod + ' PIC ' + off + currency + '.xlsx'), Local=True)
+    PICwb.Close(False)
+    templwb.Close(False)
+
+excel.Application.Quit()
+print ('Done.')
+
+###################################################
