@@ -1,0 +1,946 @@
+import openpyxl
+import pandas as pd
+import pyodbc
+import win32com.client as win32
+
+yearcode = '2018'
+monthcode = '0318'
+month2code = '1217'
+month3code = '1216'
+month4code = '1215'
+month5code = '1214'
+month6code = '1213'
+pebedt = "{ts '2018-01-01 00:00:00'}"
+peendt = "{ts '2018-03-31 00:00:00'}"
+tklist = ['02380','10665','04885']
+#'01495','03041','02252','11554','11278' My depts
+
+billratefn = '04.02.18 2017 Bill Rate File.xlsx'
+
+#Database Connections
+Elitecnxn = pyodbc.connect('DSN=Elite;Trusted_Connection=yes')
+Redwoodcnxn = pyodbc.connect('DRIVER={SQL Server};SERVER=rdcfinbiapp01;DATABASE=Redwood;UID=mbmori;Trusted_Connection=Yes')
+
+#Paths to Referenced Reports (Atty Stats, PIC, Prod, etc.)
+ASindir = r'//ricfs/finance/' + yearcode + r'/Checklist/' + monthcode + r'/06) Attorney Statistics/Check Test/'
+ASfn = 'AttyStats' + monthcode + 'CheckCopy.xlsx'
+#ASindcheckfn = 'CheckTest1.xlsx'
+
+prodindir = (r'//ricfs/finance/' + yearcode + r'/Checklist/' + monthcode + r'/01) General Schedules/Productivity/')
+prodfn = monthcode + ' Productivity LLP.xlsx'
+prodcols = {0,15,16,17,18,19,20,21,22,24,25,26,27,28,29,30}
+
+prod2indir = (r'//ricfs/finance/2017/Checklist/' + month2code + r'/01) General Schedules/Productivity/')
+prod2fn = month2code + ' Productivity LLP.xlsx'
+prod2cols = {0,15,16,17,18,19,20,21,22,24,25,26,27,28,29,30}
+
+prod3indir = (r'//ricfs/finance/2016/Checklist/' + month3code + r'/01) General Schedules/Productivity/')
+prod3fn = month3code + ' Productivity LLP.xlsx'
+prod3cols = {0,19,20,21}
+
+prod4indir = (r'//ricfs/finance/2015/Checklist/' + month4code + r'/01) General Schedules/Productivity/')
+prod4fn = month4code + ' Productivity LLP SEND.xlsx'
+prod4cols = {0,19,20,21}
+
+prod5indir = (r'//ricfs/finance/2014/Checklist/' + month5code + r'/01) General Schedules/Productivity/')
+prod5fn = month5code + ' Productivity LLP SEND.xlsx'
+prod5cols = {0,19,20,21}
+
+prod6indir = (r'//ricfs/finance/2013/Checklist/' + month6code + r'/01) General Schedules/Productivity/')
+prod6fn = month6code + ' Productivity LLP SEND.xlsx'
+prod6cols = {0,17,18,19}
+
+PICindir = (r'//ricfs/finance/' + yearcode + r'/Checklist/' + monthcode + r'/01) General Schedules/PIC Reports/')
+PICfn = monthcode + ' PIC All Office (filterable).xlsx'
+PICcols = {0,23,24,26,27,28,29,33,34,35,39,40,41,45,46,47,50,51}
+
+avgratioindir = (r'//ricfs/finance/' + yearcode + r'/Checklist/' + monthcode + r'/01) General Schedules/Average Ratios/')
+avgratiofn = monthcode + ' Average Ratios.xlsx'
+avgratiocols = {0,42,44}
+
+salaryindir = (r'//ricfs/finance/' + yearcode + r'/Checklist/' + monthcode + r'/01) General Schedules/Firmwide Contribution/Earnings Files/')
+salaryfn = monthcode + ' Timekeeper Salary.xlsx'
+salarycols = {0,13}
+
+billrateindir = (r'//ricfs/finance/' + yearcode + r'/Checklist/' + monthcode + r'/01) General Schedules/Bill Rate File/')
+billratecols = {0,3}
+
+print ('Done.')
+
+#################################
+
+#Create dataframe from AttyStats
+ASxl = pd.ExcelFile(ASindir + ASfn)
+
+#Create df of drop down list to change timekeepers
+dfASdropdown = ASxl.parse(sheetname=0, parse_cols={0,3})
+dfASdropdown = dfASdropdown.dropna()
+dfASdropdown['tk#'] = dfASdropdown['tk#'].astype('int')
+
+#Create dataframe from Productivity Report to check Atty Stats
+
+prodxl = pd.ExcelFile(prodindir + prodfn)
+prodsheet = prodxl.parse(sheetname=3, header=None, skiprows=3, parse_cols=prodcols, keep_default_na=False)
+#prodsheet1.columns = ['tk#',2,3,4,5,6,7,8,9]
+#print prodsheet.head(10)
+
+prod2xl = pd.ExcelFile(prod2indir + prod2fn)
+prod2sheet = prod2xl.parse(sheetname=3, header=None, skiprows=3, parse_cols=prod2cols, keep_default_na=False)
+#prodsheet1.columns = ['tk#',2,3,4,5,6,7,8,9]
+#print prodsheet.head(10)
+
+prod3xl = pd.ExcelFile(prod3indir + prod3fn)
+prod3sheet = prod3xl.parse(sheetname=3, header=None, skiprows=3, parse_cols=prod3cols, keep_default_na=False)
+
+prod4xl = pd.ExcelFile(prod4indir + prod4fn)
+prod4sheet = prod4xl.parse(sheetname=0, header=None, skiprows=3, parse_cols=prod4cols, keep_default_na=False)
+
+prod5xl = pd.ExcelFile(prod5indir + prod5fn)
+prod5sheet = prod5xl.parse(sheetname=0, header=None, skiprows=3, parse_cols=prod5cols, keep_default_na=False)
+
+prod6xl = pd.ExcelFile(prod6indir + prod6fn)
+prod6sheet = prod6xl.parse(sheetname=0, header=None, skiprows=3, parse_cols=prod6cols, keep_default_na=False)
+
+#Create dataframe from PIC Report to check Atty Stats
+
+PICxl = pd.ExcelFile(PICindir + PICfn)
+PICsheet = PICxl.parse(sheetname=0, header=None, skiprows=3, skip_footer=4, parse_cols=PICcols, keep_default_na=False)
+#print PICsheet.head(10)
+
+#Create dataframe from Avg Ratios to check Atty Stats
+
+avgratioxl = pd.ExcelFile(avgratioindir + avgratiofn)
+avgratiosheet = avgratioxl.parse(sheetname=(monthcode+' YTD'), header=None, skiprows=4, parse_cols=avgratiocols, keep_default_na=False)
+#print avgratiosheet.head(10)
+
+salaryxl = pd.ExcelFile(salaryindir + salaryfn)
+salarysheet = salaryxl.parse(sheetname=0, header=None, skiprows=1, parse_cols=salarycols, keep_default_na=False)
+#print salarysheet.head(10)
+
+billratexl = pd.ExcelFile(billrateindir + billratefn)
+billratesheet = billratexl.parse(sheetname='BillingRateFile', header=None, skiprows=2, parse_cols=billratecols, keep_default_na=False)
+print (billratesheet.head(10))
+print ('Done.')
+
+#########################
+
+excel = win32.gencache.EnsureDispatch('Excel.Application')
+wb = excel.Workbooks.Open(ASindir + ASfn)
+
+checkwb = excel.Workbooks.Add()
+
+#excel.Visible = True
+
+#print dfASdropdown
+ddsort = []
+for tknum in tklist:
+    dfASdropdowntk = dfASdropdown[(dfASdropdown['tk#']==int(tknum))]
+    #print dfASdropdowntk
+    ddsort.append(dfASdropdowntk.iloc[0,0])
+print (ddsort)
+
+#for ws in wb.Worksheets:
+    #print ws.Name
+
+for tksort in ddsort:
+    ws = wb.Worksheets('Individual Sheets')
+    ws.Range('A6').Value = tksort
+    ws.Range('A1:K226').Copy()
+
+    checkws = checkwb.Worksheets.Add()
+    checkws.Range('A1').PasteSpecial(Paste=12)
+    checkws.Name = str(checkws.Range('C8'))
+
+wb.Close(False)
+    
+checkwb.Worksheets('Sheet1').Delete()
+#checkwb.Worksheets('Sheet2').Delete()
+#checkwb.Worksheets('Sheet3').Delete()
+            
+checkwb.SaveAs(r'C:\Users\mbmori\Documents\AttyStats\AttyStatsCheck' + monthcode + '.xlsx')
+excel.Application.Quit()
+print ('Done.')
+
+############################
+
+AScheckxl = pd.ExcelFile(r'C:\Users\mbmori\Documents\AttyStats\AttyStatsCheck' + monthcode + '.xlsx')
+#AScheckxlwr = pd.ExcelFile(ASindir + ASindcheckfn)
+
+#Open workbook to write to
+checkwb = openpyxl.load_workbook(r'C:\Users\mbmori\Documents\AttyStats\AttyStatsCheck' + monthcode + '.xlsx')
+#print checkwb.get_sheet_names()
+
+tklist = []
+for shtcount,shtname in enumerate(checkwb.get_sheet_names()):
+    sheet = checkwb.worksheets[shtcount]
+    dfASindsh = AScheckxl.parse(sheetname=shtcount, skiprows=4, keep_default_na=False)
+    tknum = dfASindsh.iloc[0,1]
+    tklist.append((str(tknum)).zfill(5))
+tklist = "('"+ "','".join(tklist) + "')"
+print (tklist)
+print ('Done.')
+
+############################
+
+
+#SQL scripts passing in the inputs
+
+tkWA_script = """
+SELECT timekeep.tkinit AS [TK#], 
+Sum(mattimhs.mthrwkdw) AS [Billable Hrs], 
+Sum(mattimhs.mthrwkdb) AS [hrwkdb], 
+Sum(mattimhs.mthrbidb) AS [hrbidb], 
+Sum(mattimhs.mtstbidb/currates.cdrate) AS [Std Billings], 
+Sum(mattimhs.mtdobidb/currates.cdrate) AS [Actual Billings], 
+Sum(mattimhs.mtdocodc/currates.cdrate) AS [Fees Collected],
+(Sum(mattimhs.mtdobidb/currates.cdrate)/NULLIF(Sum(mattimhs.mthrwkdb),0)) AS [Eff Rate],
+(Sum(mattimhs.mtdobidb/currates.cdrate)/NULLIF(Sum(mattimhs.mtstbidb/currates.cdrate),0)) AS [Std Real]
+FROM Son_DB.dbo.client_mw client_mw, 
+Son_DB.dbo.matter matter, 
+Son_DB.dbo.mattimhs mattimhs, 
+Son_DB.dbo.periodt periodt, 
+Son_DB.dbo.timekeep timekeep, 
+Son_DB.dbo.currates currates
+WHERE mattimhs.mtmatter = matter.mmatter AND 
+mattimhs.mtper = periodt.pe AND 
+matter.mclient = client_mw.clnum AND 
+timekeep.tkinit = mattimhs.mttk AND 
+((periodt.pebedt>={pebedt}) AND 
+(periodt.peendt<={peendt})) AND 
+timekeep.tkinit IN {tklist} AND 
+matter.mcurrency = currates.curcode AND 
+currates.trtype='A' AND 
+peendt BETWEEN cddate1 and cddate2
+GROUP BY timekeep.tkinit, currates.trtype
+""".format(
+    pebedt = pebedt, 
+    peendt = peendt, 
+    tklist = tklist)
+#print tkWA_script
+dftkWA = pd.read_sql_query(tkWA_script, Elitecnxn)
+#print dftkWA.head(5)
+
+CRAwo_script = ("""
+SELECT client.corgaty AS [CRA], 
+Sum(dw_woff.credfees) AS [Sum of credfees], 
+Sum(dw_woff.credcosts) AS [Sum of credcosts], 
+Sum(dw_woff.credtotal) AS [Sum of credtotal]
+FROM Son_DB.dbo.client client, 
+Son_DB.dbo.dw_woff dw_woff, 
+Son_DB.dbo.matter matter
+WHERE matter.mclient = client.clnum AND 
+matter.mmatter = dw_woff.mmatter
+GROUP BY client.corgaty
+HAVING (client.corgaty IN {tklist})
+""").format(
+    tklist = tklist)
+dfCRAwo = pd.read_sql_query(CRAwo_script, Elitecnxn)
+dfCRAwo['CRA'] = dfCRAwo['CRA'].str.strip()
+#print dfCRAwo
+
+MBAwo_script = ("""
+SELECT matter.mbillaty AS [MBA], 
+Sum(dw_woff.credfees) AS [Sum of credfees], 
+Sum(dw_woff.credcosts) AS [Sum of credcosts], 
+Sum(dw_woff.credtotal) AS [Sum of credtotal]
+FROM Son_DB.dbo.client client, 
+Son_DB.dbo.dw_woff dw_woff, 
+Son_DB.dbo.matter matter
+WHERE matter.mclient = client.clnum AND 
+matter.mmatter = dw_woff.mmatter
+GROUP BY matter.mbillaty
+HAVING (matter.mbillaty IN {tklist})
+""").format(
+    tklist = tklist)
+dfMBAwo = pd.read_sql_query(MBAwo_script, Elitecnxn)
+dfMBAwo['MBA'] = dfMBAwo['MBA'].str.strip()
+#print dfMBAwo
+
+Portfolio_Contr_script = """
+select Client_Originating_Attorney.work_atty AS 'CRA', 
+(sum(DW_PROFIT.expected_amt) + (sum(DW_PROFIT.direct_cost) + sum(DW_PROFIT.discretion_amt)))
++ ((sum(DW_PROFIT.cost_writedowns) + sum(DW_PROFIT.cost_writeoffs)) 
++ sum(DW_PROFIT.indirect_cost)) AS 'Total_Net_Margin', 
+CAST( ((sum(DW_PROFIT.expected_amt) + (sum(DW_PROFIT.direct_cost) 
++ sum(DW_PROFIT.discretion_amt))) 
++ ((sum(DW_PROFIT.cost_writedowns) + sum(DW_PROFIT.cost_writeoffs)) 
++ sum(DW_PROFIT.indirect_cost))) AS DOUBLE PRECISION ) / nullif(sum(DW_PROFIT.std_amt), 0) AS "Total_Net_Margin__"
+FROM dbo.DW_TIMEKEEP Client_Originating_Attorney, 
+dbo.vw_rpt_profit DW_PROFIT, 
+dbo.Time_Periods TIME_PERIODS, 
+dbo.DW_RPT_CURRENCY DW_RPT_CURRENCY, 
+dbo.DW_HISTORIC_TIMEKEEP DW_HISTORIC_TIMEKEEP, 
+dbo.DW_MATTER DW_MATTER
+WHERE TIME_PERIODS.year_code = '{yearcode}' and 
+DW_RPT_CURRENCY.currency_code = 'USD       ' and 
+DW_PROFIT.capacity_desc = 'Attorney View       ' and 
+DW_HISTORIC_TIMEKEEP.historic_timekeep_ext_1 = 'Legacy' and 
+Client_Originating_Attorney.work_atty IN {tklist} and 
+Client_Originating_Attorney.work_atty = DW_MATTER.client_originating_atty and 
+DW_MATTER.matter = DW_PROFIT.matter and 
+DW_HISTORIC_TIMEKEEP.work_atty = DW_PROFIT.work_atty and 
+DW_HISTORIC_TIMEKEEP.period = DW_PROFIT.work_period and 
+DW_HISTORIC_TIMEKEEP.period = TIME_PERIODS.month_code and 
+DW_RPT_CURRENCY.currency_code = DW_PROFIT.currency_code
+GROUP BY Client_Originating_Attorney.work_atty
+ORDER BY 1 asc
+""".format(
+    yearcode = yearcode, 
+    tklist = tklist)
+dfPort_Contr = pd.read_sql_query(Portfolio_Contr_script, Redwoodcnxn)
+dfPort_Contr['CRA'] = dfPort_Contr['CRA'].str.strip()
+#print dfPort_Contr
+#print len(dfPort_Contr.iloc[0,0])
+
+ClientsbyWAHrs_script = """
+select "Work_Attorney"."work_atty" AS [WA], 
+"DW_MATTER"."related_client" AS "Related_Client", 
+"DW_MATTER"."related_client_name" AS "Related_Client_Name", 
+sum("DW_WORK_PERIOD"."hours_worked") AS "Hours_Worked"
+from "dbo"."DW_MATTER" "DW_MATTER", 
+"dbo"."vw_rpt_work_period" "DW_WORK_PERIOD", 
+"dbo"."Time_Periods" "TIME_PERIODS", 
+"dbo"."DW_RPT_CURRENCY" "DW_RPT_CURRENCY", 
+"dbo"."DW_TIMEKEEP" "Work_Attorney"
+where "TIME_PERIODS"."year_code" = '{yearcode}' and 
+"DW_RPT_CURRENCY"."currency_code" = 'USD' and 
+"Work_Attorney"."work_atty" IN {tklist} and 
+"DW_WORK_PERIOD"."matter" = "DW_MATTER"."matter" and 
+"Work_Attorney"."work_atty" = "DW_WORK_PERIOD"."work_atty" and 
+"DW_WORK_PERIOD"."work_period" = "TIME_PERIODS"."month_code" and 
+"DW_RPT_CURRENCY"."currency_code" = "DW_WORK_PERIOD"."currency_code"
+group by "Work_Attorney"."work_atty", "DW_MATTER"."related_client", "DW_MATTER"."related_client_name"
+order by 4 desc
+""".format(
+    yearcode = yearcode, 
+    tklist = tklist)
+dfClientsbyWAHrs = pd.read_sql_query(ClientsbyWAHrs_script, Redwoodcnxn)
+dfClientsbyWAHrs['WA'] = dfClientsbyWAHrs['WA'].str.strip()
+
+ClientsbyCRAColl_script = """
+select "Client_Originating_Attorney"."work_atty" AS [CRA], 
+"DW_MATTER"."related_client" AS "Related_Client", 
+"DW_MATTER"."related_client_name" AS "Related_Client_Name", 
+sum("DW_WORK_PERIOD"."periodic_collect_amt") AS "Periodic_Collect_Amt"
+from "dbo"."DW_MATTER" "DW_MATTER", 
+"dbo"."vw_rpt_work_period" "DW_WORK_PERIOD", 
+"dbo"."Time_Periods" "TIME_PERIODS", 
+"dbo"."DW_RPT_CURRENCY" "DW_RPT_CURRENCY", 
+"dbo"."DW_TIMEKEEP" "Client_Originating_Attorney"
+where "TIME_PERIODS"."year_code" = '{yearcode}' and 
+"DW_RPT_CURRENCY"."currency_code" = 'USD' and 
+"Client_Originating_Attorney"."work_atty" IN {tklist} and 
+"Client_Originating_Attorney"."work_atty" = "DW_MATTER"."client_originating_atty" and 
+"DW_WORK_PERIOD"."matter" = "DW_MATTER"."matter" and 
+"DW_WORK_PERIOD"."work_period" = "TIME_PERIODS"."month_code" and 
+"DW_RPT_CURRENCY"."currency_code" = "DW_WORK_PERIOD"."currency_code"
+group by "Client_Originating_Attorney"."work_atty", "DW_MATTER"."related_client", "DW_MATTER"."related_client_name"
+order by 4 desc
+""".format(
+    yearcode = yearcode, 
+    tklist = tklist)
+dfClientsbyCRAColl = pd.read_sql_query(ClientsbyCRAColl_script, Redwoodcnxn)
+dfClientsbyCRAColl['CRA'] = dfClientsbyCRAColl['CRA'].str.strip()
+#print dfClientsbyCRAColl.head(5)
+
+ClientsbyCOAColl_script = """
+SELECT udf.udvalue AS [COA],
+client_mw_1.crelated AS [CRelated], 
+client_mw_1.clname1 AS [Client Name], 
+Sum(mattimhs.mtdocodc/currates.cdrate) AS [Periodic Collect Amt]
+FROM Son_DB.dbo.client_mw client_mw, 
+Son_DB.dbo.client_mw client_mw_1, 
+Son_DB.dbo.matter matter, 
+Son_DB.dbo.mattimhs mattimhs, 
+Son_DB.dbo.periodt periodt, 
+Son_DB.dbo.timekeep timekeep, 
+Son_DB.dbo.udf udf, 
+Son_DB.dbo.currates currates
+WHERE mattimhs.mtmatter = matter.mmatter AND 
+mattimhs.mtper = periodt.pe AND 
+matter.mclient = client_mw.clnum AND 
+timekeep.tkinit = mattimhs.mttk AND 
+client_mw.clnum = udf.udjoin AND 
+client_mw.crelated = client_mw_1.clnum AND
+((periodt.pebedt>={pebedt}) AND 
+(periodt.peendt<={peendt})) AND 
+matter.mcurrency = currates.curcode AND 
+currates.trtype='A' AND 
+peendt BETWEEN cddate1 and cddate2
+GROUP BY udf.udvalue, client_mw_1.crelated, client_mw_1.clname1, udf.udtype, udf.udfindex
+HAVING (udf.udtype='CL') AND (udf.udfindex=37) AND (udf.udvalue IN {tklist})
+ORDER BY 4 desc
+""".format(
+    pebedt = pebedt, 
+    peendt = peendt, 
+    tklist = tklist)
+dfClientsbyCOAColl = pd.read_sql_query(ClientsbyCOAColl_script, Elitecnxn)
+dfClientsbyCOAColl['COA'] = dfClientsbyCOAColl['COA'].str.strip()
+#print dfClientsbyCOAColl.head(5)
+
+ClientsbyMSAColl_script = """
+select "mtk2"."work_atty" AS [MSA], 
+"DW_MATTER"."related_client" AS "Related_Client", 
+"DW_MATTER"."related_client_name" AS "Related_Client_Name", 
+sum("DW_WORK_PERIOD"."periodic_collect_amt") AS "Periodic_Collect_Amt"
+from ((("dbo"."vw_rpt_work_period" "DW_WORK_PERIOD" INNER JOIN "dbo"."DW_MATTER" "DW_MATTER" 
+on "DW_WORK_PERIOD"."matter" = "DW_MATTER"."matter") 
+INNER JOIN "dbo"."Time_Periods" "TIME_PERIODS" on "DW_WORK_PERIOD"."work_period" = "TIME_PERIODS"."month_code") 
+INNER JOIN "dbo"."DW_RPT_CURRENCY" "DW_RPT_CURRENCY" on "DW_RPT_CURRENCY"."currency_code" = "DW_WORK_PERIOD"."currency_code") 
+LEFT OUTER JOIN "dbo"."DW_TIMEKEEP" "mtk2" on "DW_WORK_PERIOD"."mtk2" = "mtk2"."work_atty"
+where "TIME_PERIODS"."year_code" = '{yearcode}' and "DW_RPT_CURRENCY"."currency_code" = 'USD' and "mtk2"."work_atty" IN {tklist}
+group by "mtk2"."work_atty", "DW_MATTER"."related_client", "DW_MATTER"."related_client_name"
+order by 4 desc
+""".format(
+    yearcode = yearcode, 
+    tklist = tklist)
+dfClientsbyMSAColl = pd.read_sql_query(ClientsbyMSAColl_script, Redwoodcnxn)
+dfClientsbyMSAColl['MSA'] = dfClientsbyMSAColl['MSA'].str.strip()
+#print dfClientsbyMSAColl.head(5)
+
+ClientsbyMBAColl_script = """
+select "Bill_Attorney"."work_atty" AS [MBA], 
+"DW_MATTER"."related_client" AS "Related_Client", 
+"DW_MATTER"."related_client_name" AS "Related_Client_Name", 
+sum("DW_WORK_PERIOD"."periodic_collect_amt") AS "Periodic_Collect_Amt"
+from "dbo"."DW_MATTER" "DW_MATTER", 
+"dbo"."vw_rpt_work_period" "DW_WORK_PERIOD", 
+"dbo"."Time_Periods" "TIME_PERIODS", 
+"dbo"."DW_RPT_CURRENCY" "DW_RPT_CURRENCY", 
+"dbo"."DW_TIMEKEEP" "Bill_Attorney"
+where "TIME_PERIODS"."year_code" = '{yearcode}' 
+and "DW_RPT_CURRENCY"."currency_code" = 'USD' 
+and "Bill_Attorney"."work_atty" IN {tklist} 
+and "Bill_Attorney"."work_atty" = "DW_MATTER"."bill_atty" 
+and "DW_WORK_PERIOD"."matter" = "DW_MATTER"."matter" 
+and "DW_WORK_PERIOD"."work_period" = "TIME_PERIODS"."month_code" 
+and "DW_RPT_CURRENCY"."currency_code" = "DW_WORK_PERIOD"."currency_code"
+group by "Bill_Attorney"."work_atty", "DW_MATTER"."related_client", "DW_MATTER"."related_client_name"
+order by 4 desc
+""".format(
+    yearcode = yearcode, 
+    tklist = tklist)
+dfClientsbyMBAColl = pd.read_sql_query(ClientsbyMBAColl_script, Redwoodcnxn)
+dfClientsbyMBAColl['MBA'] = dfClientsbyMBAColl['MBA'].str.strip()
+#print dfClientsbyMBAColl.head(5)
+
+ClientsbyMOAColl_script = """
+select "mtk1"."work_atty" AS [MOA], 
+"DW_MATTER"."related_client" AS "Related_Client", 
+"DW_MATTER"."related_client_name" AS "Related_Client_Name", 
+sum("DW_WORK_PERIOD"."periodic_collect_amt") AS "Periodic_Collect_Amt"
+from ((("dbo"."vw_rpt_work_period" "DW_WORK_PERIOD" 
+INNER JOIN "dbo"."DW_MATTER" "DW_MATTER" on "DW_WORK_PERIOD"."matter" = "DW_MATTER"."matter") 
+INNER JOIN "dbo"."Time_Periods" "TIME_PERIODS" on "DW_WORK_PERIOD"."work_period" = "TIME_PERIODS"."month_code") 
+INNER JOIN "dbo"."DW_RPT_CURRENCY" "DW_RPT_CURRENCY" on "DW_RPT_CURRENCY"."currency_code" = "DW_WORK_PERIOD"."currency_code") 
+LEFT OUTER JOIN "dbo"."DW_TIMEKEEP" "mtk1" on "DW_WORK_PERIOD"."mtk1" = "mtk1"."work_atty"
+where "TIME_PERIODS"."year_code" = '{yearcode}' and "DW_RPT_CURRENCY"."currency_code" = 'USD' and "mtk1"."work_atty" IN {tklist}
+group by "mtk1"."work_atty", "DW_MATTER"."related_client", "DW_MATTER"."related_client_name"
+order by 4 desc
+""".format(
+    yearcode = yearcode, 
+    tklist = tklist)
+dfClientsbyMOAColl = pd.read_sql_query(ClientsbyMOAColl_script, Redwoodcnxn)
+dfClientsbyMOAColl['MOA'] = dfClientsbyMOAColl['MOA'].str.strip()
+#print dfClientsbyMOAColl.head(5)
+print ('Done.')
+
+########################
+
+
+for shtcount,shtname in enumerate(checkwb.get_sheet_names()):
+    sheet = checkwb.worksheets[shtcount]
+    dfASindsh = AScheckxl.parse(sheetname=shtcount, skiprows=4, keep_default_na=False)
+    tknum = dfASindsh.iloc[0,1]
+    tknumstr = (str(tknum).zfill(5))
+    #print tknum
+    print (tknumstr)
+    
+    sheet.title = dfASindsh.iloc[2,2]
+    
+#    if sheet['K49'].value == '-': sheet['K49'] = 0
+#    if sheet['K59'].value == '-': sheet['K59'] = 0
+#    if sheet['K67'].value == '-': sheet['K67'] = 0
+#    if sheet['K80'].value == '-': sheet['K80'] = 0
+#    if sheet['K81'].value == '-': sheet['K81'] = 0
+#    if sheet['K82'].value == '-': sheet['K82'] = 0
+#    if sheet['K83'].value == '-': sheet['K83'] = 0
+#    if sheet['K84'].value == '-': sheet['K84'] = 0
+    #print sheet['K49'].value
+    
+    #Check Atty Stats current year column for zeros represented as '-'
+    currcell_range = sheet['K11':'K126']
+    for rownum, currcell in enumerate(currcell_range):
+        rownum = rownum + 11
+        currcell = currcell[0]
+        #print (sheet.cell(row=rownum, column = 11).value)
+        if sheet.cell(row=rownum, column=11).value == '-':
+            currcell.value = 0
+
+    
+    #***Create timekeeper dataframes***
+    
+    prodtksheet = prodsheet[(prodsheet[0]==int(tknum))].fillna(0)
+    #print prodtksheet#.iloc[0,0]
+    
+    prod2tksheet = prod2sheet[(prod2sheet[0]==int(tknum))].fillna(0)
+    #print prod2tksheet#.iloc[0,0]
+    
+    prod3tksheet = prod3sheet[(prod3sheet[0]==int(tknum))].fillna(0)
+    #print prod2tksheet#.iloc[0,0]
+    
+    prod4tksheet = prod4sheet[(prod4sheet[0]==int(tknum))].fillna(0)
+    #print prod4tksheet#.iloc[0,1]
+    
+    prod5tksheet = prod5sheet[(prod5sheet[0]==int(tknum))].fillna(0)
+    #print prod2tksheet#.iloc[0,0]
+    
+    prod6tksheet = prod6sheet[(prod6sheet[0]==int(tknum))].fillna(0)
+    #print prod2tksheet#.iloc[0,0]
+    
+    PICtksheet = PICsheet[(PICsheet[0]==int(tknum))].fillna(0)
+    #print PICtksheet
+
+    avgratiotksheet = avgratiosheet[(avgratiosheet[0]==int(tknum))].fillna(0)
+    #print avgratiotksheet.iloc[0,0]
+
+    salarytksheet = salarysheet[(salarysheet[0]==int(tknum))].fillna(0)
+    #print salarytksheet.iloc[0,1]
+
+    billratetksheet = billratesheet[(billratesheet[0]==int(tknum))].fillna(0)
+    #print billratetksheet.iloc[0,0]
+    
+    dftkWAtk = dftkWA[(dftkWA['TK#']==tknumstr)].fillna(0)
+    
+    dfCRAwotk = dfCRAwo[(dfCRAwo['CRA']==tknumstr)].fillna(0)
+    #print dfCRAwotk
+    
+    dfMBAwotk = dfMBAwo[(dfMBAwo['MBA']==tknumstr)].fillna(0)
+    #print dfMBAwotk
+    
+    dfPort_Contrtk = dfPort_Contr[(dfPort_Contr['CRA']==tknumstr)].fillna(0)
+    #print dfPort_Contrtk
+    
+    dfClientsbyWAHrstk = dfClientsbyWAHrs[(dfClientsbyWAHrs['WA']==tknumstr)]
+    dfClientsbyWAHrstk = dfClientsbyWAHrstk.head(5)
+    #print dfClientsbyWAHrstk
+    #print dfClientsbyWAHrstk.iloc[0:,1:]
+    
+    dfClientsbyCRAColltk = dfClientsbyCRAColl[(dfClientsbyCRAColl['CRA']==tknumstr)]
+    dfClientsbyCRAColltk = dfClientsbyCRAColltk.head(5)
+    #print dfClientsbyCRAColltk
+    
+    dfClientsbyCOAColltk = dfClientsbyCOAColl[(dfClientsbyCOAColl['COA']==tknumstr)]
+    dfClientsbyCOAColltk = dfClientsbyCOAColltk.head(5)
+    #print dfClientsbyCOAColltk
+    
+    dfClientsbyMSAColltk = dfClientsbyMSAColl[(dfClientsbyMSAColl['MSA']==tknumstr)]
+    dfClientsbyMSAColltk = dfClientsbyMSAColltk.head(5)
+    #print dfClientsbyMSAColltk
+    
+    dfClientsbyMBAColltk = dfClientsbyMBAColl[(dfClientsbyMBAColl['MBA']==tknumstr)]
+    dfClientsbyMBAColltk = dfClientsbyMBAColltk.head(5)
+    #print dfClientsbyMBAColltk
+    
+    dfClientsbyMOAColltk = dfClientsbyMOAColl[(dfClientsbyMOAColl['MOA']==tknumstr)]
+    dfClientsbyMOAColltk = dfClientsbyMOAColltk.head(5)
+    #print dfClientsbyMOAColltk
+    
+    #***Populate Elite Column***
+    sheet['L10'] = 'Elite Check'
+    sheet['L14'] = float(dftkWAtk.iloc[0,1])
+    sheet['L36'] = float(dftkWAtk.iloc[0,5])
+    sheet['L37'] = float(dftkWAtk.iloc[0,6])
+    sheet['L38'] = float(dftkWAtk.iloc[0,8])
+    sheet['L40'] = float(dftkWAtk.iloc[0,7])
+    
+    #***Populate Check Column***
+    
+    sheet['M10'] = 'Report Check'
+    sheet['M11'] = float(salarytksheet.iloc[0,1])
+    sheet['M14'] = float(prodtksheet.iloc[0,1])
+    sheet['M15'] = float(prodtksheet.iloc[0,8])
+    sheet['M17'] = float(prodtksheet.iloc[0,5])
+    sheet['M18'] = float(prodtksheet.iloc[0,6])
+    sheet['M19'] = float(prodtksheet.iloc[0,7])
+    sheet['M22'] = float(prodtksheet.iloc[0,11])
+    sheet['M23'] = float(prodtksheet.iloc[0,10])
+    sheet['M24'] = float(prodtksheet.iloc[0,9])
+    sheet['M25'] = float(prodtksheet.iloc[0,13])
+    sheet['M26'] = float(prodtksheet.iloc[0,12])
+    sheet['M27'] = float(prodtksheet.iloc[0,3])
+    
+    sheet['M28'] = float(prodtksheet.iloc[0,4])
+    sheet['M29'] = float(prodtksheet.iloc[0,14])
+    sheet['M32'] = float(prodtksheet.iloc[0,1]) + float(prodtksheet.iloc[0,14])
+    
+    sheet['M36'] = PICtksheet.iloc[0,1]
+    sheet['M37'] = PICtksheet.iloc[0,2]
+    
+    sheet['M38'] = avgratiotksheet.iloc[0,2]
+    sheet['M39'] = int(billratetksheet.iloc[0,1])
+    sheet['M40'] = avgratiotksheet.iloc[0,1]
+    
+    sheet['M44'] = PICtksheet.iloc[0,5]
+    sheet['M45'] = PICtksheet.iloc[0,6]
+    
+    sheet['M46'] = dfPort_Contrtk.iloc[0,1]
+    
+    if prod6tksheet.empty:
+        sheet['R17'] = 0
+    else: sheet['r17'] = float(prod6tksheet.iloc[0,1])
+    
+    if prod6tksheet.empty:
+        sheet['R18'] = 0
+    else: sheet['R18'] = float(prod6tksheet.iloc[0,2])
+        
+    if prod6tksheet.empty:
+        sheet['R19'] = 0
+    else: sheet['R19'] = float(prod6tksheet.iloc[0,3])
+    
+    
+    if prod5tksheet.empty:
+        sheet['s17'] = 0
+    else: sheet['s17'] = float(prod5tksheet.iloc[0,3])
+    
+    if prod5tksheet.empty:
+        sheet['s18'] = 0
+    else: sheet['s18'] = float(prod5tksheet.iloc[0,1])
+    
+    if prod5tksheet.empty:
+        sheet['s19'] = 0
+    else: sheet['s19'] = float(prod5tksheet.iloc[0,2])
+    
+    
+    if prod4tksheet.empty:
+        sheet['T17'] = 0
+    else: sheet['t17'] = float(prod4tksheet.iloc[0,1])
+    
+    if prod4tksheet.empty:
+        sheet['T18'] = 0
+    else: sheet['t18'] = float(prod4tksheet.iloc[0,2])
+    
+    if prod4tksheet.empty:
+        sheet['T19'] = 0
+    else: sheet['t19'] = float(prod4tksheet.iloc[0,3])
+    
+    if prod3tksheet.empty:
+        sheet['u17'] = 0
+    else:sheet['u17'] = float(prod3tksheet.iloc[0,1])
+        
+    if prod3tksheet.empty:
+        sheet['u18'] = 0
+    else:sheet['u18'] = float(prod3tksheet.iloc[0,2])
+    
+    if prod3tksheet.empty:
+        sheet['u19'] = 0
+    else:sheet['u19'] = float(prod3tksheet.iloc[0,3])
+    
+    if prod2tksheet.empty:
+        sheet['v17'] = 0
+    else:sheet['v17'] = float(prod2tksheet.iloc[0,5])
+        
+    if prod2tksheet.empty:
+        sheet['v18'] = 0
+    else:sheet['v18'] = float(prod2tksheet.iloc[0,6])
+    
+    if prod2tksheet.empty:
+        sheet['v19'] = 0
+    else:sheet['v19'] = float(prod2tksheet.iloc[0,7])
+    
+    if dfPort_Contrtk.iloc[0,1] == 0:
+        sheet['M47'] = 0
+    else: sheet['M47'] = dfPort_Contrtk.iloc[0,2]
+    
+    if dfCRAwotk.empty:
+        sheet['M50'] = 0
+    else: sheet['M50'] = dfCRAwotk.iloc[0,1] 
+    
+    if dfCRAwotk.empty:
+        sheet['M51'] = 0
+    else: sheet['M51'] = dfCRAwotk.iloc[0,2]
+    
+    if dfCRAwotk.empty:
+        sheet['M52'] = 0
+    else: sheet['M52'] = dfCRAwotk.iloc[0,3]
+    
+    
+    if PICtksheet.iloc[0,7] ==0:
+        sheet['M53'] = 0
+    else: sheet['M53'] = (PICtksheet.iloc[0,5]/PICtksheet.iloc[0,7])
+    
+    sheet['M57'] = PICtksheet.iloc[0,14]
+    sheet['M58'] = PICtksheet.iloc[0,15]
+    sheet['M61'] = PICtksheet.iloc[0,8]
+    sheet['M62'] = PICtksheet.iloc[0,9]
+    
+    if PICtksheet.iloc[0,10] == 0:
+        sheet['M63'] = 0
+    else: sheet['M63'] = (PICtksheet.iloc[0,8]/PICtksheet.iloc[0,10])
+    
+    sheet['M66'] = PICtksheet.iloc[0,11]
+    sheet['M67'] = PICtksheet.iloc[0,12]
+    
+    if dfMBAwotk.empty:
+        sheet['M68'] = 0
+    else: sheet['M68'] = dfMBAwotk.iloc[0,1] 
+    
+    if dfMBAwotk.empty:
+        sheet['M69'] = 0
+    else: sheet['M69'] = dfMBAwotk.iloc[0,2]
+    
+    if dfMBAwotk.empty:
+        sheet['M70'] = 0
+    else: sheet['M70'] = dfMBAwotk.iloc[0,3]
+    
+    if PICtksheet.iloc[0,13] == 0:
+        sheet['M71'] = 0
+    else: sheet['M71'] = (PICtksheet.iloc[0,11]/PICtksheet.iloc[0,13])
+    
+    sheet['M74'] = PICtksheet.iloc[0,16]
+    sheet['M75'] = PICtksheet.iloc[0,17]
+    sheet['M78'] = PICtksheet.iloc[0,3]
+    sheet['M79'] = PICtksheet.iloc[0,4]
+    
+    cell_range = sheet['L83':'L87']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyWAHrstk)
+        if cnt >= len(dfClientsbyWAHrstk):
+            cell.value = 'None'
+        else: cell.value = dfClientsbyWAHrstk.iloc[cnt,2]
+        #print dfClientsbyWAHrstk.iloc[cnt,2]
+    
+    cell_range = sheet['M83':'M87']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyCOAColltk)
+        if cnt >= len(dfClientsbyWAHrstk):
+            cell.value = 0
+        else: cell.value = dfClientsbyWAHrstk.iloc[cnt,3]
+        #print dfClientsbyCOAColltk.iloc[cnt,2]
+    
+    cell_range = sheet['L90':'L94']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyCRAColltk)
+        if cnt >= len(dfClientsbyCRAColltk):
+            cell.value = 'None'
+        else: cell.value = dfClientsbyCRAColltk.iloc[cnt,2]
+        #print dfClientsbyCRAColltk.iloc[cnt,2]
+    cell_range = sheet['M90':'M94']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyCRAColltk)
+        if cnt >= len(dfClientsbyCRAColltk):
+            cell.value = 0
+        else: cell.value = dfClientsbyCRAColltk.iloc[cnt,3]
+        #print dfClientsbyCRAColltk.iloc[cnt,2]
+    
+    cell_range = sheet['L97':'L101']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyCOAColltk)
+        if cnt >= len(dfClientsbyCOAColltk):
+            cell.value = 'None'
+        else: cell.value = dfClientsbyCOAColltk.iloc[cnt,2]
+        #print dfClientsbyCOAColltk.iloc[cnt,2]
+    cell_range = sheet['M97':'M101']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyCOAColltk)
+        if cnt >= len(dfClientsbyCOAColltk):
+            cell.value = 0
+        else: cell.value = dfClientsbyCOAColltk.iloc[cnt,3]
+        #print dfClientsbyCOAColltk.iloc[cnt,2]
+    
+    cell_range = sheet['L104':'L108']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyMSAColltk)
+        if cnt >= len(dfClientsbyMSAColltk):
+            cell.value = 'None'
+        else: cell.value = dfClientsbyMSAColltk.iloc[cnt,2]
+        #print dfClientsbyMSAColltk.iloc[cnt,2]
+    cell_range = sheet['M104':'M108']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyMSAColltk)
+        if cnt >= len(dfClientsbyMSAColltk):
+            cell.value = 0
+        else: cell.value = dfClientsbyMSAColltk.iloc[cnt,3]
+        #print dfClientsbyMSAColltk.iloc[cnt,2]
+        
+    cell_range = sheet['L111':'L115']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyMBAColltk)
+        if cnt >= len(dfClientsbyMBAColltk):
+            cell.value = 'None'
+        else: cell.value = dfClientsbyMBAColltk.iloc[cnt,2]
+        #print dfClientsbyMBAColltk.iloc[cnt,2]
+    cell_range = sheet['M111':'M115']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyMBAColltk)
+        if cnt >= len(dfClientsbyMBAColltk):
+            cell.value = 0
+        else: cell.value = dfClientsbyMBAColltk.iloc[cnt,3]
+        #print dfClientsbyMBAColltk.iloc[cnt,2]
+    
+    cell_range = sheet['L118':'L122']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyMOAColltk)
+        if cnt >= len(dfClientsbyMOAColltk):
+            cell.value = 'None'
+        else: cell.value = dfClientsbyMOAColltk.iloc[cnt,2]
+        #print dfClientsbyMOAColltk.iloc[cnt,2]
+    cell_range = sheet['M118':'M122']
+    for cnt, cell in enumerate(cell_range):
+        cell = cell[0]
+        #print cnt, cell
+        #print len(dfClientsbyMOAColltk)
+        if cnt >= len(dfClientsbyMOAColltk):
+            cell.value = 0
+        else: cell.value = dfClientsbyMOAColltk.iloc[cnt,3]
+        #print dfClientsbyMOAColltk.iloc[cnt,2]
+    
+    
+    #***Create Variance Column***
+    sheet['N10'] = 'Variance'
+    varcell_range = sheet['N11':'N122']
+    for rownum, varcell in enumerate(varcell_range):
+        rownum = rownum + 11
+        varcell = varcell[0]
+        #print (sheet.cell(row=rownum, column = 11).value)
+        if sheet.cell(row=rownum, column=13).value is None:
+            varcell.value = ""
+        else:
+            #print rownum, (sheet.cell(row = rownum, column = 11).value), (sheet.cell(row = rownum, column = 13).value)
+            AScell = (sheet.cell(row = rownum, column = 11).value)
+            reportcell = (sheet.cell(row = rownum, column = 13).value)
+            varcell.value = AScell - reportcell
+    #***Populate Source Column***
+    sheet['O10'] = 'Source'
+    sheet['O11'] = salaryfn
+    sheet['O14'] = prodfn
+    sheet['O15'] = prodfn
+    sheet['O17'] = prodfn
+    sheet['O18'] = prodfn
+    sheet['O19'] = prodfn
+    sheet['O22'] = prodfn
+    sheet['O23'] = prodfn
+    sheet['O24'] = prodfn
+    sheet['O25'] = prodfn
+    sheet['O26'] = prodfn
+    sheet['O27'] = prodfn
+    sheet['O28'] = prodfn
+    sheet['O28'] = prodfn
+    
+    sheet['O36'] = PICfn
+    sheet['O37'] = PICfn
+    
+    sheet['O38'] = avgratiofn
+    sheet['O39'] = billratefn
+    sheet['O40'] = avgratiofn
+    
+    sheet['O44'] = PICfn
+    sheet['O45'] = PICfn
+    
+    sheet['O46'] = 'Redwood'
+    sheet['O47'] = 'Redwood'
+    
+    sheet['O50'] = 'Elite'
+    sheet['O51'] = 'Elite'
+    sheet['O52'] = 'Elite'
+    
+    
+    
+    sheet['O53'] = PICfn
+    sheet['O57'] = PICfn
+    sheet['O58'] = PICfn
+    sheet['O61'] = PICfn
+    sheet['O62'] = PICfn
+    sheet['O63'] = PICfn
+    sheet['O66'] = PICfn
+    sheet['O67'] = PICfn
+
+    sheet['O68'] = 'Elite'
+    sheet['O69'] = 'Elite'
+    sheet['O70'] = 'Elite'
+    
+    sheet['O71'] = PICfn
+    sheet['O74'] = PICfn
+    sheet['O75'] = PICfn
+    sheet['O78'] = PICfn
+    sheet['O79'] = PICfn
+    
+    sheet['O82'] = 'Redwood'
+    
+    sheet['R16'] = '2013'
+    sheet['s16'] = '2014'
+    sheet['t16'] = '2015'
+    sheet['u16'] = '2016'
+    sheet['v16'] = '2017'
+    
+    #sheet.column_dimensions['O'].width = 40
+    
+checkwb.save(r'C:\Users\mbmori\Documents\AttyStats\AttyStatsCheck' + monthcode + '.xlsx')
+print ('Done.')
+
+#######################
+
+#***Formatting***
+excel = win32.gencache.EnsureDispatch('Excel.Application')
+wb = excel.Workbooks.Open(r'C:\Users\mbmori\Documents\AttyStats\AttyStatsCheck' + monthcode + '.xlsx')
+#excel.Visible = True
+
+
+print (str(checkwb.get_sheet_names()))
+
+for ws in wb.Worksheets:
+    ws.Range("L:N").ColumnWidth = 15
+    ws.Range("N11:N122").NumberFormat = "#,##0.##"
+    ws.Range('K11:K40').Copy()
+    ws.Range('L11:L40').PasteSpecial(Paste=-4122)
+    ws.Range('K11:K122').Copy()
+    ws.Range('M11:M122').PasteSpecial(Paste=-4122)
+    
+    for cell in ws.Range("N11:N122"):
+        if cell.Value is not None and (cell.Value > 0.009 or cell.Value < -0.009):
+            cell.Interior.ColorIndex = 6
+    
+    for cell in ws.Range("L14:L36"):
+        #print cell.Value, cell.Offset(1,2).Value
+        if cell.Value is not None:
+            if (round(cell.Value,2) != round(cell.Offset(1,2).Value,2)):
+                cell.Interior.ColorIndex = 6
+                
+    ws.Range('L10, M10, N10').Interior.ColorIndex = 43
+    
+    #Add border
+    for border_id in range(7,11):
+        ws.Range('L10:L40,N10:N122').Borders(border_id).LineStyle=1
+        ws.Range('L10:L40,N10:N122').Borders(border_id).Weight=2
+
+#Check win32com ColorIndex 
+#for cnt, colcell in enumerate(ws.Range('R1:R50')):
+    #colcell.Value = cnt
+    #colcell.Interior.ColorIndex = cnt
+
+
+wb.SaveAs(r'C:\Users\mbmori\Documents\AttyStats\AttyStatsCheck' + monthcode + '.xlsx')
+excel.Application.Quit()
+print ('Done.')
